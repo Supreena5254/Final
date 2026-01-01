@@ -1,0 +1,7 @@
+// index.js (recommended entry)
+import 'expo-dev-client'; // only if used
+import './app.css';       // <-- must be imported once in root
+import { registerRootComponent } from 'expo';
+import App from './App';
+
+registerRootComponent(App);
