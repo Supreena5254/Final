@@ -4,8 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "tunnel": "expo start --tunnel",
+    "dev": "nodemon server.js"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
     "express": "^5.2.1",
     "express-validator": "^7.3.1",
     "jsonwebtoken": "^9.0.3",
+    "lucide-react-native": "^0.563.0",
     "nodemailer": "^7.0.12",
     "pg": "^8.16.3"
   },

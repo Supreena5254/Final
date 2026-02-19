@@ -1,0 +1,231 @@
+// frontend/src/components/RatingModal.js
+import React, { useState, useEffect } from "react";
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
+import { Feather } from "@expo/vector-icons";
+
+export default function RatingModal({
+  visible,
+  onClose,
+  onSubmit,
+  recipeName,
+  existingRating = null,
+}) {
+  const [rating, setRating] = useState(existingRating || 0);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (visible) {
+      setRating(existingRating || 0);
+      setSubmitting(false);
+    }
+  }, [visible, existingRating]);
+
+  const handleSubmit = async () => {
+    if (rating === 0) {
+      alert("Please select a rating");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onSubmit(rating, null); // No review text
+      // Parent component will close modal
+    } catch (error) {
+      console.error("Submit error:", error);
+      setSubmitting(false);
+    }
+  };
+
+  const StarButton = ({ index }) => {
+    const isFilled = index <= rating;
+    return (
+      <TouchableOpacity
+        onPress={() => setRating(index)}
+        style={styles.starButton}
+        disabled={submitting}
+      >
+        <Feather
+          name="star"
+          size={50}
+          color={isFilled ? "#FFD700" : "#E0E0E0"}
+          fill={isFilled ? "#FFD700" : "none"}
+        />
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.overlay}>
+        <View style={styles.modalContainer}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Rate Recipe</Text>
+            <TouchableOpacity onPress={onClose} disabled={submitting}>
+              <Feather name="x" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Recipe Name */}
+          <Text style={styles.recipeName} numberOfLines={2}>
+            {recipeName}
+          </Text>
+
+          {/* Star Rating */}
+          <Text style={styles.label}>Your Rating</Text>
+          <View style={styles.starsContainer}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <StarButton key={star} index={star} />
+            ))}
+          </View>
+
+          {/* Rating Description */}
+          {rating > 0 && (
+            <Text style={styles.ratingText}>
+              {rating === 5 && "⭐ Excellent!"}
+              {rating === 4 && "😊 Very Good"}
+              {rating === 3 && "👍 Good"}
+              {rating === 2 && "😐 Could be Better"}
+              {rating === 1 && "😞 Poor"}
+            </Text>
+          )}
+
+          {/* Submit Button */}
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              (rating === 0 || submitting) && styles.submitButtonDisabled
+            ]}
+            onPress={handleSubmit}
+            disabled={rating === 0 || submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <>
+                <Feather name="check" size={20} color="#FFF" />
+                <Text style={styles.submitButtonText}>
+                  {existingRating ? "Update Rating" : "Submit Rating"}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Cancel Button */}
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={onClose}
+            disabled={submitting}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    backgroundColor: "#FFF",
+    borderRadius: 20,
+    paddingHorizontal: 30,
+    paddingTop: 20,
+    paddingBottom: 30,
+    width: "85%",
+    maxWidth: 400,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#2C3E50",
+  },
+  recipeName: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#16a34a",
+    marginBottom: 30,
+    textAlign: "center",
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#2C3E50",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  starsContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+    marginBottom: 20,
+  },
+  starButton: {
+    padding: 4,
+  },
+  ratingText: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#16a34a",
+    textAlign: "center",
+    marginBottom: 30,
+  },
+  submitButton: {
+    flexDirection: "row",
+    backgroundColor: "#16a34a",
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 12,
+    shadowColor: "#16a34a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  submitButtonDisabled: {
+    backgroundColor: "#A8D8A0",
+    shadowOpacity: 0.1,
+  },
+  submitButtonText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  cancelButton: {
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "500",
+  },
+});

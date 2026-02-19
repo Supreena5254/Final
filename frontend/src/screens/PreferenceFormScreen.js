@@ -51,9 +51,30 @@ export default function PreferenceFormScreen({ navigation }) {
     );
   };
 
+  // ✅ FIX: Clean array data before sending to backend
+  const cleanArray = (arr) => {
+    if (!arr || arr.length === 0) return null;
+
+    // Remove any parentheses and filter out "None"
+    const cleaned = arr
+      .map(item => {
+        // Convert to string and remove all parentheses
+        const str = String(item).replace(/[()]/g, '').trim();
+        return str;
+      })
+      .filter(item =>
+        item !== 'None' &&
+        item !== '' &&
+        item !== 'undefined' &&
+        item !== 'null'
+      );
+
+    return cleaned.length > 0 ? cleaned : null;
+  };
+
   const submitPreferences = async () => {
     // Validation - at least one preference should be selected
-    if (!dietType && !skillLevel && !mealGoal && !healthGoal && 
+    if (!dietType && !skillLevel && !mealGoal && !healthGoal &&
         allergies.length === 0 && cuisines.length === 0) {
       Alert.alert("Incomplete", "Please select at least one preference");
       return;
@@ -62,31 +83,35 @@ export default function PreferenceFormScreen({ navigation }) {
     setLoading(true);
 
     try {
+      // ✅ CRITICAL FIX: Clean arrays before sending!
       const preferencesData = {
         diet_type: dietType,
         skill_level: skillLevel,
         meal_goal: mealGoal,
         health_goal: healthGoal,
-        allergies: allergies.length > 0 ? allergies.join(", ") : null,
-        cuisines: cuisines.length > 0 ? cuisines.join(", ") : null,
+        allergies: cleanArray(allergies),  // ✅ Cleaned!
+        cuisines: cleanArray(cuisines),    // ✅ Cleaned!
       };
 
       console.log("📤 Sending preferences to PUT /auth/preferences");
+      console.log("📦 Clean data (no parentheses):");
+      console.log("  - allergies:", preferencesData.allergies, "Type:", Array.isArray(preferencesData.allergies) ? "ARRAY ✅" : "NULL");
+      console.log("  - cuisines:", preferencesData.cuisines, "Type:", Array.isArray(preferencesData.cuisines) ? "ARRAY ✅" : "NULL");
+      console.log("📦 Full data:", JSON.stringify(preferencesData, null, 2));
 
-      // ✅ CORRECT: PUT method (not POST!)
-      // Backend route: router.put("/preferences", authMiddleware, authController.updatePreferences)
+      // PUT method (backend route: PUT /auth/preferences)
       const response = await api.put("/auth/preferences", preferencesData);
-      
+
       console.log("✅ Preferences saved successfully:", response.data);
 
-      // Store flag in AsyncStorage so user doesn't see this form again
+      // Store flag so user doesn't see this form again
       await AsyncStorage.setItem("preferences_completed", "true");
 
       Alert.alert("Success! 🎉", "Your preferences have been saved", [
         {
           text: "Continue",
           onPress: () => {
-            // Navigate to MainTabs (your main app)
+            // Navigate to MainTabs (main app)
             navigation.reset({
               index: 0,
               routes: [{ name: "MainTabs" }],
@@ -97,18 +122,18 @@ export default function PreferenceFormScreen({ navigation }) {
     } catch (err) {
       console.error("❌ Preferences error:", err.response?.data || err.message);
       console.error("❌ Full error:", err);
-      
+
       // Check if it's a 404 error (route not found)
       if (err.response?.status === 404) {
         Alert.alert(
-          "Backend Error", 
-          "Preferences endpoint not found. Please check your backend routes.\n\nTried: POST /preferences\n\nExpected routes:\n- POST /preferences\n- PUT /preferences\n- POST /user/preferences"
+          "Backend Error",
+          "Preferences endpoint not found. Please check your backend routes."
         );
       } else {
-        const errorMsg = err.response?.data?.error || 
-                         err.response?.data?.message || 
+        const errorMsg = err.response?.data?.error ||
+                         err.response?.data?.message ||
                          "Failed to save preferences. Please try again.";
-        
+
         Alert.alert("Error", errorMsg);
       }
     } finally {
@@ -133,11 +158,11 @@ export default function PreferenceFormScreen({ navigation }) {
           <Feather name="heart" size={16} color={COLORS.primary} /> Diet Type
         </Text>
         {["Veg", "Non-Veg", "Vegan"].map(v => (
-          <Option 
-            key={v} 
-            label={v} 
-            selected={dietType === v} 
-            onPress={() => setDietType(v)} 
+          <Option
+            key={v}
+            label={v}
+            selected={dietType === v}
+            onPress={() => setDietType(v)}
           />
         ))}
       </View>
@@ -148,11 +173,11 @@ export default function PreferenceFormScreen({ navigation }) {
           <Feather name="award" size={16} color={COLORS.primary} /> Cooking Skill
         </Text>
         {["Beginner", "Intermediate", "Advanced"].map(v => (
-          <Option 
-            key={v} 
-            label={v} 
-            selected={skillLevel === v} 
-            onPress={() => setSkillLevel(v)} 
+          <Option
+            key={v}
+            label={v}
+            selected={skillLevel === v}
+            onPress={() => setSkillLevel(v)}
           />
         ))}
       </View>
@@ -163,11 +188,11 @@ export default function PreferenceFormScreen({ navigation }) {
           <Feather name="clock" size={16} color={COLORS.primary} /> Meal Goal
         </Text>
         {["Breakfast", "Lunch", "Dinner", "Snacks"].map(v => (
-          <Option 
-            key={v} 
-            label={v} 
-            selected={mealGoal === v} 
-            onPress={() => setMealGoal(v)} 
+          <Option
+            key={v}
+            label={v}
+            selected={mealGoal === v}
+            onPress={() => setMealGoal(v)}
           />
         ))}
       </View>
@@ -178,48 +203,48 @@ export default function PreferenceFormScreen({ navigation }) {
           <Feather name="target" size={16} color={COLORS.primary} /> Health Goal
         </Text>
         {["Weight Loss", "Muscle Gain", "Balanced Diet", "General Health"].map(v => (
-          <Option 
-            key={v} 
-            label={v} 
-            selected={healthGoal === v} 
-            onPress={() => setHealthGoal(v)} 
+          <Option
+            key={v}
+            label={v}
+            selected={healthGoal === v}
+            onPress={() => setHealthGoal(v)}
           />
         ))}
       </View>
 
-      {/* Allergies */}
+      {/* Allergies - ✅ NO PARENTHESES IN OPTIONS! */}
       <View style={styles.section}>
         <Text style={styles.label}>
           <Feather name="alert-circle" size={16} color={COLORS.primary} /> Allergies (Select all that apply)
         </Text>
         {["Peanuts", "Milk", "Eggs", "Seafood", "Soy", "Gluten", "None"].map(v => (
-          <Option 
-            key={v} 
-            label={v} 
-            selected={allergies.includes(v)} 
-            onPress={() => toggleMulti(v, allergies, setAllergies)} 
+          <Option
+            key={v}
+            label={v}
+            selected={allergies.includes(v)}
+            onPress={() => toggleMulti(v, allergies, setAllergies)}
           />
         ))}
       </View>
 
-      {/* Preferred Cuisines */}
+      {/* Preferred Cuisines - ✅ NO PARENTHESES IN OPTIONS! */}
       <View style={styles.section}>
         <Text style={styles.label}>
           <Feather name="globe" size={16} color={COLORS.primary} /> Preferred Cuisines (Select all that apply)
         </Text>
-        {["Indian", "Italian", "Chinese", "Mexican", "Thai", "Japanese", "Continental"].map(v => (
-          <Option 
-            key={v} 
-            label={v} 
-            selected={cuisines.includes(v)} 
-            onPress={() => toggleMulti(v, cuisines, setCuisines)} 
+        {["Nepali", "Indian", "Italian", "Chinese", "Mexican", "Thai", "Japanese", "Continental"].map(v => (
+          <Option
+            key={v}
+            label={v}
+            selected={cuisines.includes(v)}
+            onPress={() => toggleMulti(v, cuisines, setCuisines)}
           />
         ))}
       </View>
 
       {/* Submit Button */}
-      <TouchableOpacity 
-        style={[styles.button, loading && styles.buttonDisabled]} 
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
         onPress={submitPreferences}
         disabled={loading}
       >
@@ -242,7 +267,7 @@ export default function PreferenceFormScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
+  container: {
     flex: 1,
     backgroundColor: "#fff",
   },
@@ -252,9 +277,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     paddingBottom: 20,
   },
-  title: { 
-    fontSize: 28, 
-    fontWeight: "700", 
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
     marginTop: 15,
     marginBottom: 8,
     color: "#333",
@@ -268,24 +293,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 20,
   },
-  label: { 
-    fontSize: 16, 
-    fontWeight: "600", 
+  label: {
+    fontSize: 16,
+    fontWeight: "600",
     marginBottom: 12,
     color: COLORS.darkGreen,
   },
-  option: { 
+  option: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 16, 
-    borderRadius: 12, 
+    padding: 16,
+    borderRadius: 12,
     backgroundColor: COLORS.lightGreen,
     marginBottom: 10,
     borderWidth: 2,
     borderColor: "transparent",
   },
-  selected: { 
+  selected: {
     backgroundColor: COLORS.selectedGreen,
     borderColor: COLORS.primary,
   },
@@ -298,10 +323,10 @@ const styles = StyleSheet.create({
     color: COLORS.darkGreen,
     fontWeight: "600",
   },
-  button: { 
+  button: {
     flexDirection: "row",
     backgroundColor: COLORS.primary,
-    padding: 18, 
+    padding: 18,
     borderRadius: 12,
     marginHorizontal: 20,
     marginVertical: 20,
@@ -317,9 +342,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.mediumGreen,
     opacity: 0.7,
   },
-  buttonText: { 
-    color: "#fff", 
-    fontSize: 18, 
+  buttonText: {
+    color: "#fff",
+    fontSize: 18,
     fontWeight: "600",
     marginLeft: 8,
   },

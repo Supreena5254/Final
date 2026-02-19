@@ -10,6 +10,9 @@ import PreferenceFormScreen from "./src/screens/PreferenceFormScreen";
 import ForgotPasswordScreen from "./src/screens/ForgotPasswordScreen";
 import ResetPasswordScreen from "./src/screens/ResetPasswordScreen";
 import MainTabs from "./src/navigation/MainTabs";
+import RecipeDetailScreen from "./src/screens/RecipeDetailScreen";
+import SearchResultsScreen from "./src/screens/SearchResultsScreen";
+import CategoryRecipesScreen from "./src/screens/CategoryRecipesScreen";
 
 const Stack = createStackNavigator();
 
@@ -23,26 +26,23 @@ export default function App() {
           gestureEnabled: false,
         }}
       >
-        {/* Auth Flow */}
+        {/* Auth Screens */}
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Signup" component={SignupScreen} />
         <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
 
-        {/* Preferences Flow (first-time only) */}
-        <Stack.Screen
-          name="PreferenceForm"
-          component={PreferenceFormScreen}
-          options={{ gestureEnabled: false }}
-        />
+        {/* Preferences (first-time only) */}
+        <Stack.Screen name="PreferenceForm" component={PreferenceFormScreen} />
 
         {/* Main App */}
-        <Stack.Screen
-          name="MainTabs"
-          component={MainTabs}
-          options={{ gestureEnabled: false }}
-        />
+        <Stack.Screen name="MainTabs" component={MainTabs} />
+
+        {/* Recipe Screens */}
+        <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+        <Stack.Screen name="SearchResults" component={SearchResultsScreen} />
+        <Stack.Screen name="CategoryRecipes" component={CategoryRecipesScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
