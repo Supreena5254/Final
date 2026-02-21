@@ -3,7 +3,8 @@ const pool = require("../config/db");
 // ✅ FIXED: Proper rating calculation with weighted average
 const addOrUpdateRating = async (req, res) => {
   const { recipeId } = req.params;
-  const { rating, comment } = req.body;
+  const { rating, comment, reviewText } = req.body;  // ✅ FIX: accept both field names
+  const reviewComment = comment || reviewText || null; // ✅ use whichever is provided
   const userId = req.user.id;
 
   // Validate rating
@@ -27,7 +28,7 @@ const addOrUpdateRating = async (req, res) => {
          SET rating = $1, comment = $2, created_at = CURRENT_TIMESTAMP
          WHERE recipe_id = $3 AND user_id = $4
          RETURNING *`,
-        [rating, comment, recipeId, userId]
+        [rating, reviewComment, recipeId, userId]
       );
     } else {
       // Insert new rating
@@ -35,7 +36,7 @@ const addOrUpdateRating = async (req, res) => {
         `INSERT INTO ratings (recipe_id, user_id, rating, comment)
          VALUES ($1, $2, $3, $4)
          RETURNING *`,
-        [recipeId, userId, rating, comment]
+        [recipeId, userId, rating, reviewComment]
       );
     }
 
@@ -54,10 +55,9 @@ const addOrUpdateRating = async (req, res) => {
   }
 };
 
-// ✅ NEW: Helper function to calculate and update recipe's average rating
+// ✅ Helper function to calculate and update recipe's average rating
 const updateRecipeRating = async (recipeId) => {
   try {
-    // Calculate average rating and total count from all user ratings
     const result = await pool.query(
       `SELECT
         ROUND(AVG(rating)::numeric, 1) as avg_rating,
@@ -67,13 +67,13 @@ const updateRecipeRating = async (recipeId) => {
       [recipeId]
     );
 
-    const avgRating = result.rows[0].avg_rating || 0;
-    const ratingCount = result.rows[0].rating_count || 0;
+    const avgRating = parseFloat(result.rows[0].avg_rating) || 0;  // ✅ FIX: parse to float
+    const ratingCount = parseInt(result.rows[0].rating_count) || 0;
 
-    // Update the recipe's rating in the recipes table
+    // ✅ FIX: Cast $1 to numeric explicitly to prevent integer column truncation
     await pool.query(
       `UPDATE recipes
-       SET rating = $1,
+       SET rating = $1::numeric,
            rating_count = $2
        WHERE recipe_id = $3`,
       [avgRating, ratingCount, recipeId]
@@ -86,12 +86,14 @@ const updateRecipeRating = async (recipeId) => {
   }
 };
 
-// ✅ FIXED: Get all ratings for a recipe - uses users.id instead of users.user_id
+// ✅ FIXED: Get all ratings for a recipe - returns stats + userRating for current user
 const getRecipeRatings = async (req, res) => {
   const { recipeId } = req.params;
 
+  // Get the current user's ID from the token (works if optionalAuth middleware is used)
+  const userId = req.user?.id || null;
+
   try {
-    // ✅ FIXED: Changed u.user_id to u.id
     const result = await pool.query(
       `SELECT
         r.rating_id,
@@ -108,7 +110,7 @@ const getRecipeRatings = async (req, res) => {
     );
 
     // Get rating statistics
-    const stats = await pool.query(
+    const statsResult = await pool.query(
       `SELECT
         ROUND(AVG(rating)::numeric, 1) as average_rating,
         COUNT(*) as total_ratings,
@@ -122,9 +124,20 @@ const getRecipeRatings = async (req, res) => {
       [recipeId]
     );
 
+    // ✅ FIX: Get the current user's own rating so the modal shows "Your Rating"
+    let userRating = null;
+    if (userId) {
+      const userRatingResult = await pool.query(
+        `SELECT * FROM ratings WHERE recipe_id = $1 AND user_id = $2`,
+        [recipeId, userId]
+      );
+      userRating = userRatingResult.rows[0] || null;
+    }
+
     res.status(200).json({
       ratings: result.rows,
-      statistics: stats.rows[0],
+      stats: statsResult.rows[0],  // ✅ FIX: was "statistics", now "stats" to match frontend
+      userRating,                   // ✅ FIX: newly added so frontend knows if user already rated
     });
   } catch (error) {
     console.error("❌ Error fetching ratings:", error);
