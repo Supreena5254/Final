@@ -95,6 +95,11 @@ function WeeklySummaryModal({ visible, onClose }) {
   const [summaryData, setSummaryData] = useState(null);
   const [loading, setLoading]         = useState(true);
 
+  // Modal states for clickable highlights
+  const [showRecipeListModal, setShowRecipeListModal] = useState(false);
+  const [recipeListTitle, setRecipeListTitle] = useState("");
+  const [recipeListData, setRecipeListData] = useState([]);
+
   useEffect(() => {
     if (visible) loadSummary();
   }, [visible]);
@@ -102,8 +107,10 @@ function WeeklySummaryModal({ visible, onClose }) {
   const loadSummary = async () => {
     setLoading(true);
     try {
-      const raw = await AsyncStorage.getItem("cooked_recipes");
-      const allCooked = raw ? JSON.parse(raw) : [];
+      const rawCooked = await AsyncStorage.getItem("cooked_recipes");
+      const rawViewed = await AsyncStorage.getItem("viewed_recipes");
+      const allCooked = rawCooked ? JSON.parse(rawCooked) : [];
+      const allViewed = rawViewed ? JSON.parse(rawViewed) : [];
 
       // Filter to last 7 days
       const now  = new Date();
@@ -113,14 +120,28 @@ function WeeklySummaryModal({ visible, onClose }) {
 
       const weekCooked = allCooked.filter((e) => new Date(e.cooked_at) >= week);
 
-      // Aggregate
+      // Viewed this week — deduplicated per recipe_id
+      const weekViewedRaw = allViewed.filter((e) => new Date(e.viewed_at) >= week);
+      const viewedMap = {};
+      weekViewedRaw.forEach((e) => {
+        if (!viewedMap[e.recipe_id] || new Date(e.viewed_at) > new Date(viewedMap[e.recipe_id].viewed_at)) {
+          viewedMap[e.recipe_id] = e;
+        }
+      });
+      const weekViewed = Object.values(viewedMap);
+
+      // Everything below stays based on COOKED recipes (unchanged)
       const totalCalories = weekCooked.reduce((s, e) => s + (e.calories || 0), 0);
       const totalProtein  = weekCooked.reduce((s, e) => s + (e.protein  || 0), 0);
       const totalCarbs    = weekCooked.reduce((s, e) => s + (e.carbs    || 0), 0);
       const totalFats     = weekCooked.reduce((s, e) => s + (e.fats     || 0), 0);
 
-      // Unique cuisines
+      // Unique cuisines — from COOKED
       const cuisineSet = new Set(weekCooked.map((e) => e.cuisine).filter(Boolean));
+
+      // Calculate days active — from COOKED
+      const uniqueDays = new Set(weekCooked.map((e) => new Date(e.cooked_at).toDateString()));
+      const daysActive = uniqueDays.size;
 
       // Build per-day map (Mon-Sun)
       const dayMap = {};
@@ -144,13 +165,16 @@ function WeeklySummaryModal({ visible, onClose }) {
 
       setSummaryData({
         dateRangeLabel,
-        totalRecipes:  weekCooked.length,
+        totalRecipes:  weekViewed.length,   // viewed recipes count
         totalCalories: Math.round(totalCalories),
         totalProtein:  Math.round(totalProtein),
         totalCarbs:    Math.round(totalCarbs),
         totalFats:     Math.round(totalFats),
         cuisinesCount: cuisineSet.size,
         cuisines:      [...cuisineSet],
+        daysActive,
+        weekCooked,
+        weekViewed,    // for Recipes Explored modal only
         dayMap,
       });
     } catch (e) {
@@ -164,6 +188,89 @@ function WeeklySummaryModal({ visible, onClose }) {
     const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const months= ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     return `${days[date.getDay()]} ${months[date.getMonth()]} ${date.getDate()}`;
+  };
+
+  // Recipe List Modal Component
+  const RecipeListModal = () => {
+    const isCuisineGrouped = typeof recipeListData === 'object' && !Array.isArray(recipeListData);
+    const isDayGrouped = Array.isArray(recipeListData) && recipeListData.some((item) => item._isHeader);
+
+    return (
+      <Modal
+        visible={showRecipeListModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowRecipeListModal(false)}
+      >
+        <View style={summaryStyles.overlay}>
+          <View style={summaryStyles.sheet}>
+            <View style={summaryStyles.handle} />
+
+            <View style={summaryStyles.header}>
+              <Text style={summaryStyles.headerTitle}>{recipeListTitle}</Text>
+              <TouchableOpacity onPress={() => setShowRecipeListModal(false)} style={summaryStyles.closeBtn}>
+                <Feather name="x" size={22} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+              {isCuisineGrouped ? (
+                // Grouped by cuisine
+                Object.entries(recipeListData).map(([cuisine, recipes]) => (
+                  <View key={cuisine} style={summaryStyles.cuisineGroup}>
+                    <Text style={summaryStyles.cuisineGroupTitle}>
+                      {cuisine} ({recipes.length})
+                    </Text>
+                    {recipes.map((r, i) => (
+                      <View key={i} style={summaryStyles.recipeListItem}>
+                        <MaterialCommunityIcons name="chef-hat" size={18} color="#16a34a" />
+                        <Text style={summaryStyles.recipeListTitle}>{r.title}</Text>
+                        <Text style={summaryStyles.recipeListCal}>{r.calories} kcal</Text>
+                      </View>
+                    ))}
+                  </View>
+                ))
+              ) : isDayGrouped ? (
+                // Grouped by active day (flat list with _isHeader sentinels)
+                recipeListData.map((item, i) =>
+                  item._isHeader ? (
+                    <View key={`header-${i}`} style={summaryStyles.cuisineGroup}>
+                      <Text style={summaryStyles.cuisineGroupTitle}>{item.title}</Text>
+                    </View>
+                  ) : (
+                    <View key={i} style={summaryStyles.recipeListItem}>
+                      <MaterialCommunityIcons name="chef-hat" size={18} color="#16a34a" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={summaryStyles.recipeListTitle}>{item.title}</Text>
+                        <Text style={summaryStyles.recipeListMeta}>
+                          {item.cuisine} • {item.meal_type}
+                        </Text>
+                      </View>
+                      <Text style={summaryStyles.recipeListCal}>{item.calories} kcal</Text>
+                    </View>
+                  )
+                )
+              ) : (
+                // Simple list
+                recipeListData.map((r, i) => (
+                  <View key={i} style={summaryStyles.recipeListItem}>
+                    <MaterialCommunityIcons name="chef-hat" size={18} color="#16a34a" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={summaryStyles.recipeListTitle}>{r.title}</Text>
+                      <Text style={summaryStyles.recipeListMeta}>
+                        {r.cuisine} • {r.meal_type}
+                      </Text>
+                    </View>
+                    <Text style={summaryStyles.recipeListCal}>{r.calories} kcal</Text>
+                  </View>
+                ))
+              )}
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
   };
 
   return (
@@ -212,21 +319,78 @@ function WeeklySummaryModal({ visible, onClose }) {
               {/* ── Highlights ── */}
               <View style={summaryStyles.highlightsCard}>
                 <Text style={summaryStyles.cardTitle}>🌟 This Week's Highlights</Text>
-                <View style={summaryStyles.highlightRow}>
+
+                {/* Recipes explored - CLICKABLE */}
+                <TouchableOpacity
+                  style={summaryStyles.highlightRow}
+                  onPress={() => {
+                    setRecipeListTitle("Recipes Explored This Week");
+                    setRecipeListData(summaryData.weekViewed || []);
+                    setShowRecipeListModal(true);
+                  }}
+                  activeOpacity={0.7}
+                >
                   <MaterialCommunityIcons name="food" size={20} color={COLORS.primary} />
                   <Text style={summaryStyles.highlightText}>
                     <Text style={summaryStyles.highlightBold}>{summaryData.totalRecipes}</Text>
                     {" "}recipe{summaryData.totalRecipes !== 1 ? "s" : ""} explored
                   </Text>
-                </View>
-                <View style={summaryStyles.highlightRow}>
-                  <Feather name="heart" size={20} color="#ef4444" />
+                  <Feather name="chevron-right" size={16} color="#95A5A6" style={{ marginLeft: 'auto' }} />
+                </TouchableOpacity>
+
+                {/* Days active - CLICKABLE */}
+                <TouchableOpacity
+                  style={summaryStyles.highlightRow}
+                  onPress={() => {
+                    // Build list of active days with their recipes
+                    const activeDays = Object.values(summaryData.dayMap)
+                      .filter(({ recipes }) => recipes.length > 0)
+                      .map(({ date, recipes }) => ({
+                        title: date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+                        recipes,
+                      }));
+
+                    // Flatten into a displayable list with day headers as separators
+                    // We'll pass a special format: array of { isHeader, title } or recipe objects
+                    const flatList = [];
+                    activeDays.forEach(({ title, recipes }) => {
+                      // Use a sentinel object for day headers
+                      flatList.push({ _isHeader: true, title });
+                      recipes.forEach((r) => flatList.push(r));
+                    });
+
+                    setRecipeListTitle(`Active Days (${summaryData.daysActive})`);
+                    setRecipeListData(flatList);
+                    setShowRecipeListModal(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="calendar" size={20} color="#3b82f6" />
                   <Text style={summaryStyles.highlightText}>
-                    <Text style={summaryStyles.highlightBold}>{summaryData.totalCalories.toLocaleString()}</Text>
-                    {" "}total calories cooked
+                    <Text style={summaryStyles.highlightBold}>{summaryData.daysActive}</Text>
+                    {" "}day{summaryData.daysActive !== 1 ? "s" : ""} active
                   </Text>
-                </View>
-                <View style={summaryStyles.highlightRow}>
+                  <Feather name="chevron-right" size={16} color="#95A5A6" style={{ marginLeft: 'auto' }} />
+                </TouchableOpacity>
+
+                {/* Cuisines tried - CLICKABLE, shows ALL cuisines */}
+                <TouchableOpacity
+                  style={summaryStyles.highlightRow}
+                  onPress={() => {
+                    // Group recipes by cuisine
+                    const byCuisine = {};
+                    summaryData.weekCooked.forEach((r) => {
+                      const c = r.cuisine || "Unknown";
+                      if (!byCuisine[c]) byCuisine[c] = [];
+                      byCuisine[c].push(r);
+                    });
+
+                    setRecipeListTitle(`Cuisines Tried (${summaryData.cuisinesCount})`);
+                    setRecipeListData(byCuisine);
+                    setShowRecipeListModal(true);
+                  }}
+                  activeOpacity={0.7}
+                >
                   <Feather name="globe" size={20} color="#f59e0b" />
                   <Text style={summaryStyles.highlightText}>
                     <Text style={summaryStyles.highlightBold}>{summaryData.cuisinesCount}</Text>
@@ -237,14 +401,15 @@ function WeeklySummaryModal({ visible, onClose }) {
                       </Text>
                     )}
                   </Text>
-                </View>
+                  <Feather name="chevron-right" size={16} color="#95A5A6" style={{ marginLeft: 'auto' }} />
+                </TouchableOpacity>
               </View>
 
               {/* ── Nutrition Breakdown ── */}
               <View style={summaryStyles.nutritionCard}>
                 <Text style={summaryStyles.cardTitle}>📊 Nutrition Breakdown</Text>
                 <Text style={summaryStyles.nutritionSubtitle}>
-                  Total from {summaryData.totalRecipes} cooked recipe{summaryData.totalRecipes !== 1 ? "s" : ""}
+                  Total from {summaryData.weekCooked.length} cooked recipe{summaryData.weekCooked.length !== 1 ? "s" : ""}
                 </Text>
 
                 {/* Big calorie number */}
@@ -318,6 +483,9 @@ function WeeklySummaryModal({ visible, onClose }) {
           )}
         </View>
       </View>
+
+      {/* Recipe List Modal */}
+      <RecipeListModal />
     </Modal>
   );
 }
@@ -430,6 +598,45 @@ const summaryStyles = StyleSheet.create({
   dayEmpty:   { fontSize: 13, color: "#d1d5db" },
   dayRecipe:  { fontSize: 13, color: "#2C3E50", fontWeight: "500", marginBottom: 2 },
   dayCal:     { fontSize: 13, fontWeight: "700", color: COLORS.primary },
+
+  // Recipe List Modal styles
+  cuisineGroup: {
+    marginBottom: 24,
+  },
+  cuisineGroupTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#2C3E50",
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: "#e5e7eb",
+  },
+  recipeListItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#f9fafb",
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  recipeListTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2C3E50",
+    flex: 1,
+  },
+  recipeListMeta: {
+    fontSize: 12,
+    color: "#95A5A6",
+    marginTop: 2,
+  },
+  recipeListCal: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#16a34a",
+  },
 });
 
 // ────────────────────────────────────────────────────────────────────────────

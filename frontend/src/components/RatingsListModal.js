@@ -9,7 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, FontAwesome } from "@expo/vector-icons";
 
 export default function RatingsListModal({
   visible,
@@ -23,7 +23,6 @@ export default function RatingsListModal({
 
   const RatingBar = ({ stars, count, total }) => {
     const percentage = total > 0 ? (count / total) * 100 : 0;
-
     return (
       <View style={styles.ratingBar}>
         <Text style={styles.ratingBarLabel}>{stars}★</Text>
@@ -34,6 +33,21 @@ export default function RatingsListModal({
       </View>
     );
   };
+
+  // ✅ FIX: Proper filled stars using FontAwesome
+  const StarRow = ({ rating, size = 24 }) => {
+    return (
+      <View style={styles.starRow}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          star <= Math.round(rating)
+            ? <FontAwesome key={star} name="star" size={size} color="#FFD700" />
+            : <FontAwesome key={star} name="star-o" size={size} color="#E0E0E0" />
+        ))}
+      </View>
+    );
+  };
+
+  const hasNoRatings = !stats || parseInt(stats.total_ratings) === 0;
 
   return (
     <Modal
@@ -59,86 +73,74 @@ export default function RatingsListModal({
             </View>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Overall Rating */}
-              {stats && (
+
+              {/* Empty State — no ratings yet */}
+              {hasNoRatings ? (
+                <View style={styles.emptyState}>
+                  <FontAwesome name="star-o" size={60} color="#E0E0E0" />
+                  <Text style={styles.emptyText}>No ratings yet</Text>
+                  <Text style={styles.emptySubtext}>
+                    Be the first to rate this recipe!
+                  </Text>
+                </View>
+              ) : (
+                /* Overall Rating + Distribution */
                 <View style={styles.overallSection}>
                   <View style={styles.overallRating}>
                     <Text style={styles.overallNumber}>
                       {parseFloat(stats.average_rating || 0).toFixed(1)}
                     </Text>
-                    <View style={styles.overallStars}>
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Feather
-                          key={star}
-                          name="star"
-                          size={24}
-                          color={star <= Math.round(stats.average_rating) ? "#FFD700" : "#E0E0E0"}
-                          fill={star <= Math.round(stats.average_rating) ? "#FFD700" : "none"}
-                        />
-                      ))}
-                    </View>
+                    {/* ✅ FIX: Filled stars using FontAwesome */}
+                    <StarRow rating={stats.average_rating} size={24} />
                     <Text style={styles.overallCount}>
-                      Based on {stats.total_ratings} {stats.total_ratings === 1 ? 'rating' : 'ratings'}
+                      Based on {stats.total_ratings} {parseInt(stats.total_ratings) === 1 ? 'rating' : 'ratings'}
                     </Text>
                   </View>
 
-                  {/* Rating Distribution */}
+                  {/* Rating Distribution Bars */}
                   <View style={styles.distributionSection}>
-                    <RatingBar stars={5} count={parseInt(stats.five_star)} total={parseInt(stats.total_ratings)} />
-                    <RatingBar stars={4} count={parseInt(stats.four_star)} total={parseInt(stats.total_ratings)} />
-                    <RatingBar stars={3} count={parseInt(stats.three_star)} total={parseInt(stats.total_ratings)} />
-                    <RatingBar stars={2} count={parseInt(stats.two_star)} total={parseInt(stats.total_ratings)} />
-                    <RatingBar stars={1} count={parseInt(stats.one_star)} total={parseInt(stats.total_ratings)} />
+                    <RatingBar stars={5} count={parseInt(stats.five_star) || 0} total={parseInt(stats.total_ratings)} />
+                    <RatingBar stars={4} count={parseInt(stats.four_star) || 0} total={parseInt(stats.total_ratings)} />
+                    <RatingBar stars={3} count={parseInt(stats.three_star) || 0} total={parseInt(stats.total_ratings)} />
+                    <RatingBar stars={2} count={parseInt(stats.two_star) || 0} total={parseInt(stats.total_ratings)} />
+                    <RatingBar stars={1} count={parseInt(stats.one_star) || 0} total={parseInt(stats.total_ratings)} />
                   </View>
                 </View>
               )}
 
-              {/* User's Own Rating */}
+              {/* ✅ FIX: User's own rating section */}
               {userRating ? (
+                /* Already rated — show their rating + option to change */
                 <View style={styles.userRatingSection}>
                   <View style={styles.yourRatingCard}>
                     <Text style={styles.yourRatingLabel}>Your Rating</Text>
-                    <View style={styles.yourRatingStars}>
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Feather
-                          key={star}
-                          name="star"
-                          size={28}
-                          color={star <= userRating.rating ? "#FFD700" : "#E0E0E0"}
-                          fill={star <= userRating.rating ? "#FFD700" : "none"}
-                        />
-                      ))}
-                    </View>
-                    <Text style={styles.yourRatingNumber}>{userRating.rating}.0</Text>
+                    {/* ✅ FIX: Filled stars for user's rating */}
+                    <StarRow rating={userRating.rating} size={28} />
+                    <Text style={styles.yourRatingNumber}>
+                      {userRating.rating}.0
+                    </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.editButton}
                     onPress={onEditRating}
                   >
                     <Feather name="edit-2" size={18} color="#16a34a" />
+                    {/* ✅ FIX: "Change Rating" only shown when already rated */}
                     <Text style={styles.editButtonText}>Change Rating</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
+                /* Not yet rated — show "Rate This Recipe" button */
                 <TouchableOpacity
                   style={styles.addRatingButton}
                   onPress={onAddRating}
                 >
-                  <Feather name="star" size={20} color="#FFF" />
+                  <FontAwesome name="star" size={20} color="#FFF" />
+                  {/* ✅ FIX: "Rate This Recipe" only shown when NOT yet rated */}
                   <Text style={styles.addRatingButtonText}>Rate This Recipe</Text>
                 </TouchableOpacity>
               )}
 
-              {/* Empty State */}
-              {!stats || stats.total_ratings === 0 ? (
-                <View style={styles.emptyState}>
-                  <Feather name="star" size={60} color="#E0E0E0" />
-                  <Text style={styles.emptyText}>No ratings yet</Text>
-                  <Text style={styles.emptySubtext}>
-                    Be the first to rate this recipe!
-                  </Text>
-                </View>
-              ) : null}
             </ScrollView>
           )}
         </View>
@@ -198,7 +200,7 @@ const styles = StyleSheet.create({
     color: "#16a34a",
     marginBottom: 12,
   },
-  overallStars: {
+  starRow: {
     flexDirection: "row",
     gap: 6,
     marginBottom: 12,
@@ -257,15 +259,11 @@ const styles = StyleSheet.create({
     color: "#2C3E50",
     marginBottom: 12,
   },
-  yourRatingStars: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 8,
-  },
   yourRatingNumber: {
     fontSize: 24,
     fontWeight: "700",
     color: "#16a34a",
+    marginTop: 8,
   },
   editButton: {
     flexDirection: "row",

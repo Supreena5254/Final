@@ -8,7 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, FontAwesome } from "@expo/vector-icons";
 
 export default function RatingModal({
   visible,
@@ -17,10 +17,11 @@ export default function RatingModal({
   recipeName,
   existingRating = null,
 }) {
-  const [rating, setRating] = useState(existingRating || 0);
+  const [rating, setRating] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   // Reset state when modal opens
+  // ✅ FIX: Always start at 0 for new rating, only prefill if EDITING
   useEffect(() => {
     if (visible) {
       setRating(existingRating || 0);
@@ -36,14 +37,14 @@ export default function RatingModal({
 
     setSubmitting(true);
     try {
-      await onSubmit(rating, null); // No review text
-      // Parent component will close modal
+      await onSubmit(rating, null);
     } catch (error) {
       console.error("Submit error:", error);
       setSubmitting(false);
     }
   };
 
+  // ✅ FIX: Using FontAwesome for proper filled/empty stars
   const StarButton = ({ index }) => {
     const isFilled = index <= rating;
     return (
@@ -51,15 +52,24 @@ export default function RatingModal({
         onPress={() => setRating(index)}
         style={styles.starButton}
         disabled={submitting}
+        activeOpacity={0.7}
       >
-        <Feather
-          name="star"
-          size={50}
-          color={isFilled ? "#FFD700" : "#E0E0E0"}
-          fill={isFilled ? "#FFD700" : "none"}
-        />
+        {isFilled ? (
+          <FontAwesome name="star" size={50} color="#FFD700" />
+        ) : (
+          <FontAwesome name="star-o" size={50} color="#E0E0E0" />
+        )}
       </TouchableOpacity>
     );
+  };
+
+  const getRatingLabel = () => {
+    if (rating === 5) return "⭐ Excellent!";
+    if (rating === 4) return "😊 Very Good";
+    if (rating === 3) return "👍 Good";
+    if (rating === 2) return "😐 Could be Better";
+    if (rating === 1) return "😞 Poor";
+    return "";
   };
 
   return (
@@ -85,7 +95,7 @@ export default function RatingModal({
           </Text>
 
           {/* Star Rating */}
-          <Text style={styles.label}>Your Rating</Text>
+          <Text style={styles.label}>Tap a star to rate</Text>
           <View style={styles.starsContainer}>
             {[1, 2, 3, 4, 5].map((star) => (
               <StarButton key={star} index={star} />
@@ -94,16 +104,10 @@ export default function RatingModal({
 
           {/* Rating Description */}
           {rating > 0 && (
-            <Text style={styles.ratingText}>
-              {rating === 5 && "⭐ Excellent!"}
-              {rating === 4 && "😊 Very Good"}
-              {rating === 3 && "👍 Good"}
-              {rating === 2 && "😐 Could be Better"}
-              {rating === 1 && "😞 Poor"}
-            </Text>
+            <Text style={styles.ratingText}>{getRatingLabel()}</Text>
           )}
 
-          {/* Submit Button */}
+          {/* ✅ FIX: Button text — "Rate Recipe" for new, "Update Rating" for edit */}
           <TouchableOpacity
             style={[
               styles.submitButton,
@@ -116,9 +120,9 @@ export default function RatingModal({
               <ActivityIndicator color="#FFF" />
             ) : (
               <>
-                <Feather name="check" size={20} color="#FFF" />
+                <FontAwesome name="star" size={18} color="#FFF" />
                 <Text style={styles.submitButtonText}>
-                  {existingRating ? "Update Rating" : "Submit Rating"}
+                  {existingRating ? "Update Rating" : "Rate Recipe"}
                 </Text>
               </>
             )}
@@ -173,10 +177,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   label: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2C3E50",
-    marginBottom: 20,
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#999",
+    marginBottom: 16,
     textAlign: "center",
   },
   starsContainer: {

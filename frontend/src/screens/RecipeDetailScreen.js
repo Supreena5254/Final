@@ -55,6 +55,9 @@ export default function RecipeDetailScreen({ route, navigation }) {
 
       setRecipe(response.data);
 
+      // Track that this recipe was viewed
+      await saveViewedRecipe(response.data);
+
       // Set favorite state from backend response
       const favoriteStatus = response.data.is_favorite === true;
       setIsFavorite(favoriteStatus);
@@ -70,6 +73,32 @@ export default function RecipeDetailScreen({ route, navigation }) {
       Alert.alert("Error", "Failed to load recipe details");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Save to viewed_recipes (once per recipe per day)
+  const saveViewedRecipe = async (r) => {
+    try {
+      const raw  = await AsyncStorage.getItem("viewed_recipes");
+      const list = raw ? JSON.parse(raw) : [];
+      const today = new Date().toDateString();
+      const alreadyToday = list.some(
+        (e) => e.recipe_id === r.recipe_id &&
+               new Date(e.viewed_at).toDateString() === today
+      );
+      if (!alreadyToday) {
+        list.push({
+          recipe_id: r.recipe_id,
+          title:     r.title,
+          calories:  Number(r.calories)  || 0,
+          cuisine:   r.cuisine_type      || "",
+          meal_type: r.meal_type         || "",
+          viewed_at: new Date().toISOString(),
+        });
+        await AsyncStorage.setItem("viewed_recipes", JSON.stringify(list));
+      }
+    } catch (e) {
+      console.error("saveViewedRecipe error:", e);
     }
   };
 
