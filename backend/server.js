@@ -45,7 +45,13 @@ const recipeRoutes = require("./routes/recipes");
 console.log("✅ Recipe routes loaded");
 
 const ratingRoutes = require("./routes/ratings");
-      console.log("✅ Rating routes loaded");
+console.log("✅ Rating routes loaded");
+
+const uploadRoutes = require("./routes/upload");
+console.log("✅ Upload routes loaded");
+
+const activityRoutes = require("./routes/activity");
+console.log("✅ Activity routes loaded");
 
 // ⚠️ This is where it might fail
 try {
@@ -58,14 +64,14 @@ try {
   app.use("/api/recipes", recipeRoutes);
   app.use("/api/grocery", groceryRoutes);
   app.use("/api/ratings", ratingRoutes);
+  app.use("/api/upload", uploadRoutes);
+  app.use("/api/activity", activityRoutes);
 
   console.log("✅ All routes registered!");
 } catch (error) {
   console.error("❌ ERROR loading grocery routes:", error.message);
   console.error("Stack:", error.stack);
 }
-
-
 
 // 404 handler
 app.use((req, res) => {
