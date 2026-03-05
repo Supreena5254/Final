@@ -7,22 +7,33 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import api from "../api/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const COLORS = {
-  primary: "#6BBF59",
-  darkGreen: "#3A7D44",
-  lightGreen: "#EAF6EA",
-  textGray: "#666",
+  primary: "#4CAF50",
+  darkGreen: "#2E7D32",
+  mediumGreen: "#43A047",
+  lightGreen: "#F1F8F1",
+  cardGreen: "#E8F5E9",
+  borderGreen: "#C8E6C9",
+  textDark: "#1B1B1B",
+  textGray: "#757575",
+  white: "#FFFFFF",
+  red: "#E53935",
 };
 
 export default function LoginScreen({ navigation }) {
+  const [activeTab, setActiveTab] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -30,55 +41,31 @@ export default function LoginScreen({ navigation }) {
       Alert.alert("Error", "Please enter both email and password");
       return;
     }
-
     setLoading(true);
-    console.log("🔐 Attempting login for:", email);
-
     try {
       const response = await api.post("/auth/login", {
         email: email.trim(),
         password,
       });
-
-      console.log("✅ Login successful:", response.data);
-
       await AsyncStorage.setItem("authToken", response.data.token);
       await AsyncStorage.setItem("userId", response.data.user.id.toString());
       await AsyncStorage.setItem("userEmail", response.data.user.email);
-
       try {
         const profileResponse = await api.get("/auth/profile");
-        console.log("📋 Profile data:", profileResponse.data);
-
-        const hasPreferences = profileResponse.data.user.diet_type !== null ||
-                              profileResponse.data.user.skill_level !== null ||
-                              profileResponse.data.user.meal_goal !== null;
-
+        const hasPreferences =
+          profileResponse.data.user.diet_type !== null ||
+          profileResponse.data.user.skill_level !== null ||
+          profileResponse.data.user.meal_goal !== null;
         if (hasPreferences) {
-          console.log("✅ User has preferences, going to MainTabs");
           await AsyncStorage.setItem("preferences_completed", "true");
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "MainTabs" }],
-          });
+          navigation.reset({ index: 0, routes: [{ name: "MainTabs" }] });
         } else {
-          console.log("⚠️ No preferences found, showing PreferenceForm");
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "PreferenceForm" }],
-          });
+          navigation.reset({ index: 0, routes: [{ name: "PreferenceForm" }] });
         }
-      } catch (prefError) {
-        console.error("⚠️ Could not check preferences:", prefError.response?.data);
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "PreferenceForm" }],
-        });
+      } catch {
+        navigation.reset({ index: 0, routes: [{ name: "PreferenceForm" }] });
       }
-
     } catch (error) {
-      console.error("❌ Login error:", error.response?.data);
-
       if (error.response?.data?.requiresVerification === true) {
         Alert.alert(
           "Email Not Verified",
@@ -87,12 +74,11 @@ export default function LoginScreen({ navigation }) {
             { text: "Cancel", style: "cancel" },
             {
               text: "Verify Now",
-              onPress: () => {
+              onPress: () =>
                 navigation.navigate("OTPVerification", {
                   email: email.trim(),
                   fromLogin: true,
-                });
-              },
+                }),
             },
           ]
         );
@@ -108,174 +94,307 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to continue</Text>
-      </View>
-
-      <View style={styles.form}>
-        <View style={styles.inputContainer}>
-          <Feather name="mail" size={20} color={COLORS.darkGreen} style={styles.icon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!loading}
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── LOGO ── */}
+        <View style={styles.logoRow}>
+          <MaterialCommunityIcons
+            name="chef-hat"
+            size={38}
+            color={COLORS.mediumGreen}
+            style={{ marginRight: 8 }}
           />
+          <Text style={styles.logoText}>CookMate</Text>
         </View>
 
-        <View style={styles.inputContainer}>
-          <Feather name="lock" size={20} color={COLORS.darkGreen} style={styles.icon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            editable={!loading}
-          />
-          <TouchableOpacity
-            onPress={() => setShowPassword(!showPassword)}
-            style={styles.eyeIcon}
-            disabled={loading}
-          >
-            <Feather
-              name={showPassword ? "eye" : "eye-off"}
-              size={20}
-              color={COLORS.darkGreen}
+        {/* ── HEADLINE ── */}
+        <Text style={styles.welcomeTitle}>Welcome Back</Text>
+        <Text style={styles.welcomeSub}>Sign in to continue</Text>
+
+        {/* ── CARD ── */}
+        <View style={styles.card}>
+
+          {/* Tab Row */}
+          <View style={styles.tabRow}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === "signin" && styles.tabActive]}
+              onPress={() => setActiveTab("signin")}
+              disabled={loading}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "signin" && styles.tabTextActive,
+                ]}
+              >
+                Sign in
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === "signup" && styles.tabActive]}
+              onPress={() => {
+                setActiveTab("signup");
+                navigation.navigate("Signup");
+              }}
+              disabled={loading}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "signup" && styles.tabTextActive,
+                ]}
+              >
+                Sign up
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Username / Email */}
+          <View style={styles.inputRow}>
+            <Feather name="user" size={18} color={COLORS.mediumGreen} />
+            <TextInput
+              style={styles.input}
+              placeholder="Username"
+              placeholderTextColor="#AAAAAA"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!loading}
             />
-          </TouchableOpacity>
-        </View>
+          </View>
 
-        {/* Forgot Password Link */}
-        <TouchableOpacity
-          style={styles.forgotPasswordContainer}
-          onPress={() => navigation.navigate("ForgotPassword")}
-          disabled={loading}
-        >
-          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-        </TouchableOpacity>
+          {/* Password */}
+          <View style={styles.inputRow}>
+            <Feather name="lock" size={18} color={COLORS.mediumGreen} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#AAAAAA"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              editable={!loading}
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword(!showPassword)}
+              disabled={loading}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather
+                name={showPassword ? "eye" : "eye-off"}
+                size={18}
+                color="#AAAAAA"
+              />
+            </TouchableOpacity>
+          </View>
 
-        <TouchableOpacity
-          style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <Text style={styles.loginButtonText}>Login</Text>
-          )}
-        </TouchableOpacity>
+          {/* Remember me + Forgot */}
+          <View style={styles.rememberRow}>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setRememberMe(!rememberMe)}
+              disabled={loading}
+            >
+              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                {rememberMe && (
+                  <Feather name="check" size={11} color={COLORS.white} />
+                )}
+              </View>
+              <Text style={styles.rememberText}>Remember me</Text>
+            </TouchableOpacity>
 
-        <View style={styles.signupContainer}>
-          <Text style={styles.signupText}>Don't have an account? </Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("ForgotPassword")}
+              disabled={loading}
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Login Button */}
           <TouchableOpacity
-            onPress={() => navigation.navigate("Signup")}
+            style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
+            onPress={handleLogin}
             disabled={loading}
+            activeOpacity={0.85}
           >
-            <Text style={styles.signupLink}>Sign Up</Text>
+            {loading ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.loginBtnText}>Login</Text>
+            )}
           </TouchableOpacity>
+
         </View>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: "#FFF",
+    backgroundColor: COLORS.white,
   },
-  header: {
-    paddingTop: 80,
-    paddingHorizontal: 30,
-    marginBottom: 40,
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+    paddingVertical: 48,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: COLORS.darkGreen,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.textGray,
-  },
-  form: {
-    paddingHorizontal: 30,
-  },
-  inputContainer: {
+
+  /* Logo */
+  logoRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: COLORS.lightGreen,
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    marginBottom: 15,
-    height: 55,
+    marginBottom: 20,
   },
-  icon: {
-    marginRight: 10,
+  logoText: {
+    fontSize: 30,
+    fontWeight: "800",
+    color: COLORS.mediumGreen,
+    letterSpacing: 0.3,
+  },
+
+  /* Headline */
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: COLORS.darkGreen,
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  welcomeSub: {
+    fontSize: 15,
+    color: COLORS.textGray,
+    marginBottom: 28,
+    textAlign: "center",
+  },
+
+  /* Card */
+  card: {
+    width: "100%",
+    backgroundColor: COLORS.cardGreen,
+    borderRadius: 20,
+    paddingHorizontal: 22,
+    paddingTop: 10,
+    paddingBottom: 28,
+    shadowColor: "#2E7D32",
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+
+  /* Tabs */
+  tabRow: {
+    flexDirection: "row",
+    marginBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderGreen,
+  },
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  tabActive: {
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.darkGreen,
+  },
+  tabText: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: COLORS.textGray,
+  },
+  tabTextActive: {
+    color: COLORS.darkGreen,
+    fontWeight: "700",
+  },
+
+  /* Inputs */
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderGreen,
+    paddingVertical: 12,
+    marginBottom: 14,
   },
   input: {
     flex: 1,
-    fontSize: 16,
-    color: "#333",
-  },
-  eyeIcon: {
-    padding: 5,
-  },
-  forgotPasswordContainer: {
-    alignItems: "flex-end",
-    marginBottom: 20,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    color: "#dc2626",
-    fontWeight: "600",
-  },
-  loginButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    height: 55,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 10,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  loginButtonDisabled: {
-    backgroundColor: "#A8D8A0",
-    shadowOpacity: 0.1,
-  },
-  loginButtonText: {
-    color: "#FFF",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  signupContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    marginTop: 20,
-  },
-  signupText: {
+    marginLeft: 10,
     fontSize: 15,
+    color: COLORS.textDark,
+  },
+
+  /* Remember / Forgot row */
+  rememberRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 4,
+    marginBottom: 24,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  checkbox: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: COLORS.mediumGreen,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 7,
+  },
+  checkboxChecked: {
+    backgroundColor: COLORS.mediumGreen,
+    borderColor: COLORS.mediumGreen,
+  },
+  rememberText: {
+    fontSize: 13,
     color: COLORS.textGray,
   },
-  signupLink: {
-    fontSize: 15,
-    color: COLORS.primary,
+  forgotText: {
+    fontSize: 13,
+    color: COLORS.red,
     fontWeight: "600",
+  },
+
+  /* Login button */
+  loginBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 50,
+    height: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: COLORS.darkGreen,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  loginBtnDisabled: {
+    backgroundColor: "#A5D6A7",
+  },
+  loginBtnText: {
+    color: COLORS.white,
+    fontSize: 17,
+    fontWeight: "700",
+    letterSpacing: 0.4,
   },
 });

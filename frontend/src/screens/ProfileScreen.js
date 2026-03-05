@@ -26,8 +26,7 @@ const COLORS = {
   textGray:     "#666",
 };
 
-// ─── Tiny SVG-style Pie Chart (React Native) ────────────────────────────────
-// Renders a simple donut chart using nested Views + border-radius trick
+// ─── Donut/Bar Chart ────────────────────────────────────────────────────────
 const DonutChart = ({ protein, carbs, fats }) => {
   const total = protein + carbs + fats;
   if (total === 0) {
@@ -49,7 +48,6 @@ const DonutChart = ({ protein, carbs, fats }) => {
 
   return (
     <View style={donutStyles.wrapper}>
-      {/* Stacked bar approach — clean & works without SVG */}
       <View style={donutStyles.barRow}>
         {segments.map((s) => (
           <View
@@ -61,7 +59,6 @@ const DonutChart = ({ protein, carbs, fats }) => {
           />
         ))}
       </View>
-      {/* Legend */}
       <View style={donutStyles.legend}>
         {segments.map((s) => (
           <View key={s.label} style={donutStyles.legendItem}>
@@ -95,7 +92,6 @@ function WeeklySummaryModal({ visible, onClose }) {
   const [summaryData, setSummaryData] = useState(null);
   const [loading, setLoading]         = useState(true);
 
-  // Modal states for clickable highlights
   const [showRecipeListModal, setShowRecipeListModal] = useState(false);
   const [recipeListTitle, setRecipeListTitle] = useState("");
   const [recipeListData, setRecipeListData] = useState([]);
@@ -104,46 +100,72 @@ function WeeklySummaryModal({ visible, onClose }) {
     if (visible) loadSummary();
   }, [visible]);
 
+  // ✅ UPDATED: Load from DATABASE first, fallback to AsyncStorage if offline
   const loadSummary = async () => {
     setLoading(true);
     try {
-      const rawCooked = await AsyncStorage.getItem("cooked_recipes");
-      const rawViewed = await AsyncStorage.getItem("viewed_recipes");
-      const allCooked = rawCooked ? JSON.parse(rawCooked) : [];
-      const allViewed = rawViewed ? JSON.parse(rawViewed) : [];
+      let allCooked = [];
+      let allViewed = [];
 
-      // Filter to last 7 days
+      // Try to load from DB first
+      try {
+        const response = await api.get("/activity/weekly-summary");
+        allCooked = response.data.cooked || [];
+        allViewed = response.data.viewed || [];
+        console.log(`✅ Loaded from DB: ${allCooked.length} cooked, ${allViewed.length} viewed`);
+      } catch (apiError) {
+        // Fallback to AsyncStorage if offline
+        console.warn("⚠️ DB unavailable, falling back to AsyncStorage");
+        const rawCooked = await AsyncStorage.getItem("cooked_recipes");
+        const rawViewed = await AsyncStorage.getItem("viewed_recipes");
+        const localCooked = rawCooked ? JSON.parse(rawCooked) : [];
+        const localViewed = rawViewed ? JSON.parse(rawViewed) : [];
+
+        // Filter to last 7 days
+        const now  = new Date();
+        const week = new Date(now);
+        week.setDate(now.getDate() - 6);
+        week.setHours(0, 0, 0, 0);
+
+        allCooked = localCooked.filter((e) => new Date(e.cooked_at) >= week);
+        allViewed = localViewed.filter((e) => new Date(e.viewed_at) >= week);
+      }
+
+      // ── Process the data (same logic as before) ──────────────────────────
+
       const now  = new Date();
       const week = new Date(now);
       week.setDate(now.getDate() - 6);
       week.setHours(0, 0, 0, 0);
 
-      const weekCooked = allCooked.filter((e) => new Date(e.cooked_at) >= week);
+      const weekCooked = allCooked;
 
-      // Viewed this week — deduplicated per recipe_id
-      const weekViewedRaw = allViewed.filter((e) => new Date(e.viewed_at) >= week);
+      // Deduplicate viewed by recipe_id
       const viewedMap = {};
-      weekViewedRaw.forEach((e) => {
-        if (!viewedMap[e.recipe_id] || new Date(e.viewed_at) > new Date(viewedMap[e.recipe_id].viewed_at)) {
-          viewedMap[e.recipe_id] = e;
+      allViewed.forEach((e) => {
+        const key = e.recipe_id;
+        if (!viewedMap[key] || new Date(e.viewed_at) > new Date(viewedMap[key].viewed_at)) {
+          viewedMap[key] = e;
         }
       });
       const weekViewed = Object.values(viewedMap);
 
-      // Everything below stays based on COOKED recipes (unchanged)
-      const totalCalories = weekCooked.reduce((s, e) => s + (e.calories || 0), 0);
-      const totalProtein  = weekCooked.reduce((s, e) => s + (e.protein  || 0), 0);
-      const totalCarbs    = weekCooked.reduce((s, e) => s + (e.carbs    || 0), 0);
-      const totalFats     = weekCooked.reduce((s, e) => s + (e.fats     || 0), 0);
+      // Totals from cooked
+      const totalCalories = weekCooked.reduce((s, e) => s + (Number(e.calories) || 0), 0);
+      const totalProtein  = weekCooked.reduce((s, e) => s + (Number(e.protein)  || 0), 0);
+      const totalCarbs    = weekCooked.reduce((s, e) => s + (Number(e.carbs)    || 0), 0);
+      const totalFats     = weekCooked.reduce((s, e) => s + (Number(e.fats)     || 0), 0);
 
-      // Unique cuisines — from COOKED
+      // Unique cuisines
       const cuisineSet = new Set(weekCooked.map((e) => e.cuisine).filter(Boolean));
 
-      // Calculate days active — from COOKED
-      const uniqueDays = new Set(weekCooked.map((e) => new Date(e.cooked_at).toDateString()));
+      // Days active
+      const uniqueDays = new Set(
+        weekCooked.map((e) => new Date(e.cooked_at).toDateString())
+      );
       const daysActive = uniqueDays.size;
 
-      // Build per-day map (Mon-Sun)
+      // Day-by-day map (last 7 days)
       const dayMap = {};
       for (let i = 6; i >= 0; i--) {
         const d = new Date(now);
@@ -157,15 +179,14 @@ function WeeklySummaryModal({ visible, onClose }) {
         };
       }
 
-      // Date range label  e.g.  "Feb 11 – Feb 17, 2026"
+      // Date range label
       const fmt = (d) =>
         d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const dateRangeLabel =
-        `${fmt(week)} – ${fmt(now)}, ${now.getFullYear()}`;
+      const dateRangeLabel = `${fmt(week)} – ${fmt(now)}, ${now.getFullYear()}`;
 
       setSummaryData({
         dateRangeLabel,
-        totalRecipes:  weekViewed.length,   // viewed recipes count
+        totalRecipes:  weekViewed.length,
         totalCalories: Math.round(totalCalories),
         totalProtein:  Math.round(totalProtein),
         totalCarbs:    Math.round(totalCarbs),
@@ -174,7 +195,7 @@ function WeeklySummaryModal({ visible, onClose }) {
         cuisines:      [...cuisineSet],
         daysActive,
         weekCooked,
-        weekViewed,    // for Recipes Explored modal only
+        weekViewed,
         dayMap,
       });
     } catch (e) {
@@ -185,12 +206,12 @@ function WeeklySummaryModal({ visible, onClose }) {
   };
 
   const dayLabel = (date) => {
-    const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const days  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const months= ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     return `${days[date.getDay()]} ${months[date.getMonth()]} ${date.getDate()}`;
   };
 
-  // Recipe List Modal Component
+  // Recipe List Modal
   const RecipeListModal = () => {
     const isCuisineGrouped = typeof recipeListData === 'object' && !Array.isArray(recipeListData);
     const isDayGrouped = Array.isArray(recipeListData) && recipeListData.some((item) => item._isHeader);
@@ -215,7 +236,6 @@ function WeeklySummaryModal({ visible, onClose }) {
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
               {isCuisineGrouped ? (
-                // Grouped by cuisine
                 Object.entries(recipeListData).map(([cuisine, recipes]) => (
                   <View key={cuisine} style={summaryStyles.cuisineGroup}>
                     <Text style={summaryStyles.cuisineGroupTitle}>
@@ -231,7 +251,6 @@ function WeeklySummaryModal({ visible, onClose }) {
                   </View>
                 ))
               ) : isDayGrouped ? (
-                // Grouped by active day (flat list with _isHeader sentinels)
                 recipeListData.map((item, i) =>
                   item._isHeader ? (
                     <View key={`header-${i}`} style={summaryStyles.cuisineGroup}>
@@ -251,7 +270,6 @@ function WeeklySummaryModal({ visible, onClose }) {
                   )
                 )
               ) : (
-                // Simple list
                 recipeListData.map((r, i) => (
                   <View key={i} style={summaryStyles.recipeListItem}>
                     <MaterialCommunityIcons name="chef-hat" size={18} color="#16a34a" />
@@ -282,10 +300,8 @@ function WeeklySummaryModal({ visible, onClose }) {
     >
       <View style={summaryStyles.overlay}>
         <View style={summaryStyles.sheet}>
-          {/* Handle */}
           <View style={summaryStyles.handle} />
 
-          {/* Header */}
           <View style={summaryStyles.header}>
             <View>
               <Text style={summaryStyles.headerTitle}>Week in Review</Text>
@@ -305,7 +321,7 @@ function WeeklySummaryModal({ visible, onClose }) {
               <ActivityIndicator size="large" color={COLORS.primary} />
               <Text style={summaryStyles.loadingText}>Loading your week...</Text>
             </View>
-          ) : !summaryData || summaryData.totalRecipes === 0 ? (
+          ) : !summaryData || summaryData.totalRecipes === 0 && summaryData.weekCooked.length === 0 ? (
             <View style={summaryStyles.emptyBox}>
               <MaterialCommunityIcons name="chef-hat" size={72} color="#d1fae5" />
               <Text style={summaryStyles.emptyTitle}>No cooking this week yet</Text>
@@ -316,11 +332,11 @@ function WeeklySummaryModal({ visible, onClose }) {
           ) : (
             <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
 
-              {/* ── Highlights ── */}
+              {/* Highlights */}
               <View style={summaryStyles.highlightsCard}>
                 <Text style={summaryStyles.cardTitle}>🌟 This Week's Highlights</Text>
 
-                {/* Recipes explored - CLICKABLE */}
+                {/* Recipes explored */}
                 <TouchableOpacity
                   style={summaryStyles.highlightRow}
                   onPress={() => {
@@ -338,27 +354,21 @@ function WeeklySummaryModal({ visible, onClose }) {
                   <Feather name="chevron-right" size={16} color="#95A5A6" style={{ marginLeft: 'auto' }} />
                 </TouchableOpacity>
 
-                {/* Days active - CLICKABLE */}
+                {/* Days active */}
                 <TouchableOpacity
                   style={summaryStyles.highlightRow}
                   onPress={() => {
-                    // Build list of active days with their recipes
                     const activeDays = Object.values(summaryData.dayMap)
                       .filter(({ recipes }) => recipes.length > 0)
                       .map(({ date, recipes }) => ({
                         title: date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
                         recipes,
                       }));
-
-                    // Flatten into a displayable list with day headers as separators
-                    // We'll pass a special format: array of { isHeader, title } or recipe objects
                     const flatList = [];
                     activeDays.forEach(({ title, recipes }) => {
-                      // Use a sentinel object for day headers
                       flatList.push({ _isHeader: true, title });
                       recipes.forEach((r) => flatList.push(r));
                     });
-
                     setRecipeListTitle(`Active Days (${summaryData.daysActive})`);
                     setRecipeListData(flatList);
                     setShowRecipeListModal(true);
@@ -373,18 +383,16 @@ function WeeklySummaryModal({ visible, onClose }) {
                   <Feather name="chevron-right" size={16} color="#95A5A6" style={{ marginLeft: 'auto' }} />
                 </TouchableOpacity>
 
-                {/* Cuisines tried - CLICKABLE, shows ALL cuisines */}
+                {/* Cuisines tried */}
                 <TouchableOpacity
                   style={summaryStyles.highlightRow}
                   onPress={() => {
-                    // Group recipes by cuisine
                     const byCuisine = {};
                     summaryData.weekCooked.forEach((r) => {
                       const c = r.cuisine || "Unknown";
                       if (!byCuisine[c]) byCuisine[c] = [];
                       byCuisine[c].push(r);
                     });
-
                     setRecipeListTitle(`Cuisines Tried (${summaryData.cuisinesCount})`);
                     setRecipeListData(byCuisine);
                     setShowRecipeListModal(true);
@@ -405,14 +413,13 @@ function WeeklySummaryModal({ visible, onClose }) {
                 </TouchableOpacity>
               </View>
 
-              {/* ── Nutrition Breakdown ── */}
+              {/* Nutrition Breakdown */}
               <View style={summaryStyles.nutritionCard}>
                 <Text style={summaryStyles.cardTitle}>📊 Nutrition Breakdown</Text>
                 <Text style={summaryStyles.nutritionSubtitle}>
                   Total from {summaryData.weekCooked.length} cooked recipe{summaryData.weekCooked.length !== 1 ? "s" : ""}
                 </Text>
 
-                {/* Big calorie number */}
                 <View style={summaryStyles.calorieBadge}>
                   <Text style={summaryStyles.calorieNumber}>
                     {summaryData.totalCalories.toLocaleString()}
@@ -420,14 +427,12 @@ function WeeklySummaryModal({ visible, onClose }) {
                   <Text style={summaryStyles.calorieUnit}>kcal total</Text>
                 </View>
 
-                {/* Macro bar */}
                 <DonutChart
                   protein={summaryData.totalProtein}
                   carbs={summaryData.totalCarbs}
                   fats={summaryData.totalFats}
                 />
 
-                {/* Macro cards */}
                 <View style={summaryStyles.macroRow}>
                   {[
                     { label: "Protein", value: summaryData.totalProtein, color: "#16a34a", bg: "#dcfce7" },
@@ -442,7 +447,7 @@ function WeeklySummaryModal({ visible, onClose }) {
                 </View>
               </View>
 
-              {/* ── Day-by-day breakdown ── */}
+              {/* Day-by-day breakdown */}
               <View style={summaryStyles.dayCard}>
                 <Text style={summaryStyles.cardTitle}>📆 Daily Activity</Text>
                 {Object.values(summaryData.dayMap).map(({ date, recipes }) => {
@@ -469,7 +474,7 @@ function WeeklySummaryModal({ visible, onClose }) {
                       {recipes.length > 0 && (
                         <View style={summaryStyles.dayRight}>
                           <Text style={summaryStyles.dayCal}>
-                            {Math.round(recipes.reduce((s, r) => s + (r.calories || 0), 0))} kcal
+                            {Math.round(recipes.reduce((s, r) => s + (Number(r.calories) || 0), 0))} kcal
                           </Text>
                         </View>
                       )}
@@ -484,7 +489,6 @@ function WeeklySummaryModal({ visible, onClose }) {
         </View>
       </View>
 
-      {/* Recipe List Modal */}
       <RecipeListModal />
     </Modal>
   );
@@ -525,15 +529,14 @@ const summaryStyles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   loadingBox: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 80 },
-  loadingText:{ marginTop: 12, color: COLORS.textGray, fontSize: 15 },
+  loadingText: { marginTop: 12, color: COLORS.textGray, fontSize: 15 },
   emptyBox: {
     flex: 1, alignItems: "center", justifyContent: "center",
     paddingVertical: 60, paddingHorizontal: 30,
   },
-  emptyTitle:   { fontSize: 20, fontWeight: "700", color: "#2C3E50", marginTop: 20, textAlign: "center" },
-  emptySubtitle:{ fontSize: 14, color: COLORS.textGray, marginTop: 10, textAlign: "center", lineHeight: 20 },
+  emptyTitle:    { fontSize: 20, fontWeight: "700", color: "#2C3E50", marginTop: 20, textAlign: "center" },
+  emptySubtitle: { fontSize: 14, color: COLORS.textGray, marginTop: 10, textAlign: "center", lineHeight: 20 },
 
-  // Cards
   highlightsCard: {
     backgroundColor: COLORS.lightGreen,
     borderRadius: 16, padding: 20, marginBottom: 16,
@@ -553,29 +556,22 @@ const summaryStyles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  cardTitle: {
-    fontSize: 17, fontWeight: "700", color: "#2C3E50", marginBottom: 16,
-  },
+  cardTitle: { fontSize: 17, fontWeight: "700", color: "#2C3E50", marginBottom: 16 },
 
-  // Highlights
   highlightRow:  { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 12 },
   highlightText: { fontSize: 15, color: "#2C3E50", flex: 1, lineHeight: 22 },
   highlightBold: { fontWeight: "800", color: COLORS.primary },
   cuisineList:   { fontWeight: "400", color: COLORS.textGray },
 
-  // Nutrition
   nutritionSubtitle: { fontSize: 13, color: COLORS.textGray, marginTop: -8, marginBottom: 16 },
   calorieBadge: { alignItems: "center", marginBottom: 20 },
-  calorieNumber:{ fontSize: 52, fontWeight: "800", color: COLORS.primary },
-  calorieUnit:  { fontSize: 14, color: COLORS.textGray, marginTop: -4 },
-  macroRow:     { flexDirection: "row", gap: 10, marginTop: 20 },
-  macroCard:    {
-    flex: 1, borderRadius: 12, padding: 14, alignItems: "center",
-  },
-  macroValue:   { fontSize: 22, fontWeight: "800" },
-  macroLabel:   { fontSize: 13, color: "#555", fontWeight: "600", marginTop: 4 },
+  calorieNumber: { fontSize: 52, fontWeight: "800", color: COLORS.primary },
+  calorieUnit:   { fontSize: 14, color: COLORS.textGray, marginTop: -4 },
+  macroRow:      { flexDirection: "row", gap: 10, marginTop: 20 },
+  macroCard:     { flex: 1, borderRadius: 12, padding: 14, alignItems: "center" },
+  macroValue:    { fontSize: 22, fontWeight: "800" },
+  macroLabel:    { fontSize: 13, color: "#555", fontWeight: "600", marginTop: 4 },
 
-  // Days
   dayRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -591,56 +587,30 @@ const summaryStyles = StyleSheet.create({
     borderBottomWidth: 0,
     marginHorizontal: -10,
   },
-  dayLeft:    { flex: 1 },
-  dayRight:   { alignItems: "flex-end" },
-  dayLabel:   { fontSize: 13, fontWeight: "700", color: "#95A5A6", marginBottom: 4 },
+  dayLeft:       { flex: 1 },
+  dayRight:      { alignItems: "flex-end" },
+  dayLabel:      { fontSize: 13, fontWeight: "700", color: "#95A5A6", marginBottom: 4 },
   dayLabelToday: { color: COLORS.primary },
-  dayEmpty:   { fontSize: 13, color: "#d1d5db" },
-  dayRecipe:  { fontSize: 13, color: "#2C3E50", fontWeight: "500", marginBottom: 2 },
-  dayCal:     { fontSize: 13, fontWeight: "700", color: COLORS.primary },
+  dayEmpty:      { fontSize: 13, color: "#d1d5db" },
+  dayRecipe:     { fontSize: 13, color: "#2C3E50", fontWeight: "500", marginBottom: 2 },
+  dayCal:        { fontSize: 13, fontWeight: "700", color: COLORS.primary },
 
-  // Recipe List Modal styles
-  cuisineGroup: {
-    marginBottom: 24,
-  },
+  cuisineGroup:      { marginBottom: 24 },
   cuisineGroupTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#2C3E50",
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: "#e5e7eb",
+    fontSize: 18, fontWeight: "700", color: "#2C3E50",
+    marginBottom: 12, paddingBottom: 8,
+    borderBottomWidth: 2, borderBottomColor: "#e5e7eb",
   },
   recipeListItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: "#f9fafb",
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 10,
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: "#f9fafb", padding: 14, borderRadius: 12, marginBottom: 10,
   },
-  recipeListTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2C3E50",
-    flex: 1,
-  },
-  recipeListMeta: {
-    fontSize: 12,
-    color: "#95A5A6",
-    marginTop: 2,
-  },
-  recipeListCal: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#16a34a",
-  },
+  recipeListTitle: { fontSize: 15, fontWeight: "600", color: "#2C3E50", flex: 1 },
+  recipeListMeta:  { fontSize: 12, color: "#95A5A6", marginTop: 2 },
+  recipeListCal:   { fontSize: 13, fontWeight: "700", color: "#16a34a" },
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// Option chip
 const Option = ({ label, selected, onPress, disabled }) => (
   <TouchableOpacity
     style={[styles.option, selected && styles.selected, disabled && styles.optionDisabled]}
@@ -660,15 +630,14 @@ export default function ProfileScreen({ navigation }) {
   const [isEditing, setIsEditing] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
 
-  // Edit states
-  const [fullName, setFullName]   = useState("");
+  const [fullName, setFullName]       = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
-  const [dietType, setDietType]   = useState(null);
-  const [skillLevel, setSkillLevel] = useState(null);
-  const [mealGoal, setMealGoal]   = useState(null);
-  const [healthGoal, setHealthGoal] = useState(null);
-  const [allergies, setAllergies] = useState([]);
-  const [cuisines, setCuisines]   = useState([]);
+  const [dietType, setDietType]       = useState(null);
+  const [skillLevel, setSkillLevel]   = useState(null);
+  const [mealGoal, setMealGoal]       = useState(null);
+  const [healthGoal, setHealthGoal]   = useState(null);
+  const [allergies, setAllergies]     = useState([]);
+  const [cuisines, setCuisines]       = useState([]);
 
   useEffect(() => { loadProfile(); }, []);
 
@@ -850,7 +819,6 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.name}>{userData.full_name || "User"}</Text>
           <Text style={styles.email}>{userData.email}</Text>
 
-          {/* ── Weekly Summary Button ── */}
           {!isEditing && (
             <TouchableOpacity
               style={styles.summaryButton}
@@ -905,16 +873,15 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>Cooking Preferences</Text>
           {!isEditing ? (
             <View style={styles.card}>
-              <InfoRow icon="heart"        label="Diet Type"    value={userData.diet_type} />
-              <InfoRow icon="award"        label="Skill Level"  value={userData.skill_level} />
-              <InfoRow icon="clock"        label="Meal Goal"    value={userData.meal_goal} />
-              <InfoRow icon="target"       label="Health Goal"  value={userData.health_goal} />
-              <InfoRow icon="alert-circle" label="Allergies"    value={userData.allergies} />
-              <InfoRow icon="globe"        label="Cuisines"     value={userData.cuisines} />
+              <InfoRow icon="heart"        label="Diet Type"   value={userData.diet_type} />
+              <InfoRow icon="award"        label="Skill Level" value={userData.skill_level} />
+              <InfoRow icon="clock"        label="Meal Goal"   value={userData.meal_goal} />
+              <InfoRow icon="target"       label="Health Goal" value={userData.health_goal} />
+              <InfoRow icon="alert-circle" label="Allergies"   value={userData.allergies} />
+              <InfoRow icon="globe"        label="Cuisines"    value={userData.cuisines} />
             </View>
           ) : (
             <View>
-              {/* Diet */}
               <View style={styles.editSection}>
                 <Text style={styles.label}>
                   <Feather name="heart" size={16} color={COLORS.primary} /> Diet Type
@@ -924,7 +891,6 @@ export default function ProfileScreen({ navigation }) {
                     onPress={() => setDietType(v)} disabled={saving} />
                 ))}
               </View>
-              {/* Skill */}
               <View style={styles.editSection}>
                 <Text style={styles.label}>
                   <Feather name="award" size={16} color={COLORS.primary} /> Cooking Skill
@@ -934,7 +900,6 @@ export default function ProfileScreen({ navigation }) {
                     onPress={() => setSkillLevel(v)} disabled={saving} />
                 ))}
               </View>
-              {/* Meal goal */}
               <View style={styles.editSection}>
                 <Text style={styles.label}>
                   <Feather name="clock" size={16} color={COLORS.primary} /> Meal Goal
@@ -944,7 +909,6 @@ export default function ProfileScreen({ navigation }) {
                     onPress={() => setMealGoal(v)} disabled={saving} />
                 ))}
               </View>
-              {/* Health goal */}
               <View style={styles.editSection}>
                 <Text style={styles.label}>
                   <Feather name="target" size={16} color={COLORS.primary} /> Health Goal
@@ -954,7 +918,6 @@ export default function ProfileScreen({ navigation }) {
                     onPress={() => setHealthGoal(v)} disabled={saving} />
                 ))}
               </View>
-              {/* Allergies */}
               <View style={styles.editSection}>
                 <Text style={styles.label}>
                   <Feather name="alert-circle" size={16} color={COLORS.primary} /> Allergies
@@ -964,7 +927,6 @@ export default function ProfileScreen({ navigation }) {
                     onPress={() => toggleMulti(v, allergies, setAllergies)} disabled={saving} />
                 ))}
               </View>
-              {/* Cuisines */}
               <View style={styles.editSection}>
                 <Text style={styles.label}>
                   <Feather name="globe" size={16} color={COLORS.primary} /> Cuisines
@@ -1065,7 +1027,6 @@ const styles = StyleSheet.create({
   name:  { fontSize: 24, fontWeight: "700", color: "#333", marginBottom: 4 },
   email: { fontSize: 16, color: COLORS.textGray, marginBottom: 20 },
 
-  // ── Summary button ──────────────────────────────────────────────────────
   summaryButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1113,10 +1074,10 @@ const styles = StyleSheet.create({
     padding: 16, borderRadius: 12, backgroundColor: COLORS.lightGreen,
     marginBottom: 10, borderWidth: 2, borderColor: "transparent",
   },
-  selected:      { backgroundColor: COLORS.selectedGreen, borderColor: COLORS.primary },
-  optionDisabled:{ opacity: 0.5 },
-  optionText:    { fontSize: 15, color: "#333", fontWeight: "500" },
-  selectedText:  { color: COLORS.darkGreen, fontWeight: "600" },
+  selected:       { backgroundColor: COLORS.selectedGreen, borderColor: COLORS.primary },
+  optionDisabled: { opacity: 0.5 },
+  optionText:     { fontSize: 15, color: "#333", fontWeight: "500" },
+  selectedText:   { color: COLORS.darkGreen, fontWeight: "600" },
 
   actionRow:  { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 16 },
   actionLeft: { flexDirection: "row", alignItems: "center", gap: 12 },

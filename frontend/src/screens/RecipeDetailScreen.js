@@ -55,7 +55,7 @@ export default function RecipeDetailScreen({ route, navigation }) {
 
       setRecipe(response.data);
 
-      // Track that this recipe was viewed
+      // ✅ Track that this recipe was viewed (saves to DB + AsyncStorage)
       await saveViewedRecipe(response.data);
 
       // Set favorite state from backend response
@@ -76,9 +76,10 @@ export default function RecipeDetailScreen({ route, navigation }) {
     }
   };
 
-  // Save to viewed_recipes (once per recipe per day)
+  // ✅ UPDATED: Save to viewed_recipes in DB AND AsyncStorage
   const saveViewedRecipe = async (r) => {
     try {
+      // 1. Save to AsyncStorage (for offline fallback)
       const raw  = await AsyncStorage.getItem("viewed_recipes");
       const list = raw ? JSON.parse(raw) : [];
       const today = new Date().toDateString();
@@ -97,8 +98,20 @@ export default function RecipeDetailScreen({ route, navigation }) {
         });
         await AsyncStorage.setItem("viewed_recipes", JSON.stringify(list));
       }
+
+      // 2. ✅ Also save to database
+      await api.post("/activity/viewed", {
+        recipe_id: r.recipe_id,
+        title:     r.title,
+        calories:  Number(r.calories) || 0,
+        cuisine:   r.cuisine_type     || "",
+        meal_type: r.meal_type        || "",
+      });
+
+      console.log("✅ Viewed recipe saved to DB:", r.recipe_id);
     } catch (e) {
-      console.error("saveViewedRecipe error:", e);
+      // Don't crash the app if this fails — it's non-critical
+      console.warn("⚠️ saveViewedRecipe error (non-critical):", e.message);
     }
   };
 
@@ -176,7 +189,7 @@ export default function RecipeDetailScreen({ route, navigation }) {
 
       const response = await api.post(`/ratings/${recipeId}`, {
         rating,
-        reviewText: null  // No review text
+        reviewText: null
       });
 
       console.log("✅ Rating submitted:", response.data);
@@ -194,7 +207,7 @@ export default function RecipeDetailScreen({ route, navigation }) {
     } catch (error) {
       console.error("❌ Error submitting rating:", error);
       Alert.alert("Error", "Failed to submit rating. Please try again.");
-      throw error; // Re-throw to prevent modal from closing
+      throw error;
     }
   };
 
@@ -202,10 +215,9 @@ export default function RecipeDetailScreen({ route, navigation }) {
   // MARK AS COOKED HELPERS
   // ============================================
 
+  // ✅ UPDATED: Save cooked recipe to DB AND AsyncStorage
   const saveCookedRecipe = async (r) => {
     try {
-      const raw = await AsyncStorage.getItem("cooked_recipes");
-      const list = raw ? JSON.parse(raw) : [];
       const entry = {
         recipe_id: r.recipe_id,
         title:     r.title,
@@ -217,17 +229,38 @@ export default function RecipeDetailScreen({ route, navigation }) {
         meal_type: r.meal_type        || "",
         cooked_at: new Date().toISOString(),
       };
+
+      // 1. Save to AsyncStorage (for offline fallback)
+      const raw = await AsyncStorage.getItem("cooked_recipes");
+      const list = raw ? JSON.parse(raw) : [];
       const today = new Date().toDateString();
       const alreadyToday = list.some(
         (e) =>
           e.recipe_id === entry.recipe_id &&
           new Date(e.cooked_at).toDateString() === today
       );
+
       if (!alreadyToday) {
         list.push(entry);
         await AsyncStorage.setItem("cooked_recipes", JSON.stringify(list));
       }
-      return !alreadyToday;
+
+      // 2. ✅ Save to database
+      const dbResponse = await api.post("/activity/cooked", {
+        recipe_id: r.recipe_id,
+        title:     r.title,
+        calories:  Number(r.calories) || 0,
+        protein:   Number(r.protein)  || 0,
+        carbs:     Number(r.carbs)    || 0,
+        fats:      Number(r.fats)     || 0,
+        cuisine:   r.cuisine_type     || "",
+        meal_type: r.meal_type        || "",
+      });
+
+      console.log("✅ Cooked recipe saved to DB:", dbResponse.data);
+
+      // Return false if already logged today (either in AsyncStorage or DB)
+      return !alreadyToday && !dbResponse.data.alreadyLogged;
     } catch (e) {
       console.error("saveCookedRecipe error:", e);
       return false;
