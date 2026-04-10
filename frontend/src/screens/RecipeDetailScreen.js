@@ -17,8 +17,21 @@ import { useFocusEffect } from "@react-navigation/native";
 import RatingModal from "../components/RatingModal";
 import RatingsListModal from "../components/RatingsListModal";
 
-// ✅ NEW: Voice feature
+// ✅ Voice feature
 import * as Speech from "expo-speech";
+
+// ✅ FIX: Your backend IP — must match your .env / server IP
+// Change this if your IP changes
+const MINIO_BASE_URL = "http://192.168.10.73:9000/recipe-images";
+
+// ✅ FIX: Helper to build full image URL from filename or partial URL
+const buildImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  const filename = imageUrl.startsWith("http")
+    ? imageUrl.split("/").pop()
+    : imageUrl.trim();
+  return `${MINIO_BASE_URL}/${filename}`;
+};
 
 export default function RecipeDetailScreen({ route, navigation }) {
   const { recipeId } = route.params;
@@ -36,7 +49,7 @@ export default function RecipeDetailScreen({ route, navigation }) {
   const [ratingsData, setRatingsData] = useState(null);
   const [loadingRatings, setLoadingRatings] = useState(false);
 
-  // ✅ NEW: Voice feature states
+  // Voice feature states
   const [voiceModeActive, setVoiceModeActive] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -46,7 +59,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
     React.useCallback(() => {
       fetchRecipeDetails();
       return () => {
-        // ✅ NEW: Stop speech when leaving screen
         Speech.stop();
         setVoiceModeActive(false);
         setIsSpeaking(false);
@@ -67,19 +79,17 @@ export default function RecipeDetailScreen({ route, navigation }) {
       console.log("   is_favorite:", response.data.is_favorite);
       console.log("   rating:", response.data.rating);
       console.log("   rating_count:", response.data.rating_count);
+      console.log("   image_url:", response.data.image_url); // ✅ debug image
 
       setRecipe(response.data);
 
-      // ✅ Track that this recipe was viewed (saves to DB + AsyncStorage)
       await saveViewedRecipe(response.data);
 
-      // Set favorite state from backend response
       const favoriteStatus = response.data.is_favorite === true;
       setIsFavorite(favoriteStatus);
 
       console.log("❤️ Favorite status set to:", favoriteStatus);
 
-      // Check if already marked as cooked today
       const cooked = await checkCookedToday(recipeId);
       setIsCooked(cooked);
 
@@ -91,10 +101,8 @@ export default function RecipeDetailScreen({ route, navigation }) {
     }
   };
 
-  // ✅ UPDATED: Save to viewed_recipes in DB AND AsyncStorage
   const saveViewedRecipe = async (r) => {
     try {
-      // 1. Save to AsyncStorage (for offline fallback)
       const raw  = await AsyncStorage.getItem("viewed_recipes");
       const list = raw ? JSON.parse(raw) : [];
       const today = new Date().toDateString();
@@ -114,7 +122,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
         await AsyncStorage.setItem("viewed_recipes", JSON.stringify(list));
       }
 
-      // 2. ✅ Also save to database
       await api.post("/activity/viewed", {
         recipe_id: r.recipe_id,
         title:     r.title,
@@ -125,7 +132,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
 
       console.log("✅ Viewed recipe saved to DB:", r.recipe_id);
     } catch (e) {
-      // Don't crash the app if this fails — it's non-critical
       console.warn("⚠️ saveViewedRecipe error (non-critical):", e.message);
     }
   };
@@ -136,18 +142,15 @@ export default function RecipeDetailScreen({ route, navigation }) {
       console.log("Recipe ID:", recipeId);
       console.log("Current favorite status:", isFavorite);
 
-      // Optimistic update
       const newFavoriteState = !isFavorite;
       setIsFavorite(newFavoriteState);
       console.log("⚡ Optimistic update to:", newFavoriteState);
 
-      // Make API call
       const response = await api.post(`/recipes/${recipeId}/favorite`);
 
       console.log("✅ Toggle response:", response.data);
       console.log("   Server returned is_favorite:", response.data.is_favorite);
 
-      // Update with server response
       setIsFavorite(response.data.is_favorite);
 
       setRecipe({
@@ -159,7 +162,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
 
     } catch (error) {
       console.error("❌ Toggle favorite error:", error);
-      // Revert on error
       setIsFavorite(!isFavorite);
       Alert.alert("Error", "Failed to update favorite status");
     }
@@ -209,14 +211,11 @@ export default function RecipeDetailScreen({ route, navigation }) {
 
       console.log("✅ Rating submitted:", response.data);
 
-      // Close modals FIRST
       setShowRatingModal(false);
       setShowRatingsListModal(false);
 
-      // Show success message
       Alert.alert("Success! ⭐", "Your rating has been submitted");
 
-      // Refresh recipe details to get updated rating
       await fetchRecipeDetails();
 
     } catch (error) {
@@ -230,7 +229,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
   // MARK AS COOKED HELPERS
   // ============================================
 
-  // ✅ UPDATED: Save cooked recipe to DB AND AsyncStorage
   const saveCookedRecipe = async (r) => {
     try {
       const entry = {
@@ -245,7 +243,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
         cooked_at: new Date().toISOString(),
       };
 
-      // 1. Save to AsyncStorage (for offline fallback)
       const raw = await AsyncStorage.getItem("cooked_recipes");
       const list = raw ? JSON.parse(raw) : [];
       const today = new Date().toDateString();
@@ -260,7 +257,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
         await AsyncStorage.setItem("cooked_recipes", JSON.stringify(list));
       }
 
-      // 2. ✅ Save to database
       const dbResponse = await api.post("/activity/cooked", {
         recipe_id: r.recipe_id,
         title:     r.title,
@@ -274,7 +270,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
 
       console.log("✅ Cooked recipe saved to DB:", dbResponse.data);
 
-      // Return false if already logged today (either in AsyncStorage or DB)
       return !alreadyToday && !dbResponse.data.alreadyLogged;
     } catch (e) {
       console.error("saveCookedRecipe error:", e);
@@ -344,7 +339,7 @@ export default function RecipeDetailScreen({ route, navigation }) {
   };
 
   // ============================================
-  // ✅ NEW: VOICE FEATURE FUNCTIONS
+  // VOICE FEATURE FUNCTIONS
   // ============================================
 
   const speakStep = (index, stepsArray) => {
@@ -459,15 +454,15 @@ export default function RecipeDetailScreen({ route, navigation }) {
     );
   }
 
-  // Parse ingredients
+  // ✅ FIX 1: Parse ingredients safely
   const ingredients = typeof recipe.ingredients === 'string'
-    ? recipe.ingredients.split(';').map(i => i.trim())
-    : recipe.ingredients;
+    ? recipe.ingredients.split(';').map(i => i.trim()).filter(Boolean)
+    : (Array.isArray(recipe.ingredients) ? recipe.ingredients : []);
 
-  // Parse quantities
+  // Parse quantities safely
   const quantities = typeof recipe.quantity === 'string'
     ? recipe.quantity.split(';').map(q => q.trim())
-    : recipe.quantity || [];
+    : (Array.isArray(recipe.quantity) ? recipe.quantity : []);
 
   // Combine ingredients with quantities
   const ingredientsWithQuantities = ingredients.map((ingredient, index) => ({
@@ -475,13 +470,16 @@ export default function RecipeDetailScreen({ route, navigation }) {
     quantity: quantities[index] || ''
   }));
 
-  const steps = typeof recipe.steps === 'string'
-    ? recipe.steps.split('|').map(s => s.trim()).filter(Boolean)
-    : recipe.steps;
+  // ✅ FIX 2: Parse instructions (NOT steps — your DB column is "instructions")
+  const steps = typeof recipe.instructions === 'string'
+    ? recipe.instructions.split('|').map(s => s.trim()).filter(Boolean)
+    : (Array.isArray(recipe.instructions) ? recipe.instructions : []);
 
-  // Check if recipe has an image
-  const imageUrl = recipe.image_url;
-  const hasImage = imageUrl && imageUrl.trim() !== '';
+  // ✅ FIX 3: Build image URL properly using helper
+  const imageUrl = buildImageUrl(recipe.image_url);
+  const hasImage = imageUrl !== null;
+
+  console.log("🖼️ Image URL built:", imageUrl); // debug
 
   // Format rating display
   const displayRating = recipe.rating ? parseFloat(recipe.rating).toFixed(1) : "0.0";
@@ -528,7 +526,11 @@ export default function RecipeDetailScreen({ route, navigation }) {
           <Image
             source={{ uri: imageUrl }}
             style={styles.recipeImage}
-            onError={(e) => console.log('Image load error:', e.nativeEvent.error)}
+            onError={(e) => {
+              console.log('❌ Image load error for recipe:', recipeId, '| URL:', imageUrl);
+              console.log('   Error:', e.nativeEvent.error);
+            }}
+            onLoad={() => console.log('✅ Image loaded for recipe:', recipeId)}
           />
         ) : (
           <View style={styles.imageContainer}>
@@ -657,9 +659,9 @@ export default function RecipeDetailScreen({ route, navigation }) {
               <View style={styles.ingredientContent}>
                 <View style={styles.bullet} />
                 <Text style={styles.ingredientText}>{item.name}</Text>
-                {item.quantity && (
+                {item.quantity ? (
                   <Text style={styles.quantityText}>{item.quantity}</Text>
-                )}
+                ) : null}
               </View>
             </View>
           ))}
@@ -667,7 +669,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
 
         {/* Instructions */}
         <View style={styles.section}>
-          {/* ✅ NEW: Header row with Listen button */}
           <View style={styles.sectionHeaderWithButton}>
             <Text style={styles.sectionTitle}>Instructions</Text>
             <TouchableOpacity
@@ -679,7 +680,6 @@ export default function RecipeDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* ✅ NEW: Hint when voice is active */}
           {voiceModeActive && (
             <View style={styles.voiceHint}>
               <Feather name="info" size={14} color="#16a34a" />
@@ -687,28 +687,34 @@ export default function RecipeDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {steps.map((step, index) => (
-            <View
-              key={index}
-              style={[
-                styles.stepItem,
-                voiceModeActive && index === currentStepIndex && styles.stepItemActive,
-              ]}
-            >
-              <View style={[
-                styles.stepNumber,
-                voiceModeActive && index === currentStepIndex && styles.stepNumberActive,
-              ]}>
-                <Text style={styles.stepNumberText}>{index + 1}</Text>
+          {steps.length === 0 ? (
+            <Text style={{ color: "#999", fontStyle: "italic", paddingLeft: 4 }}>
+              No instructions available.
+            </Text>
+          ) : (
+            steps.map((step, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.stepItem,
+                  voiceModeActive && index === currentStepIndex && styles.stepItemActive,
+                ]}
+              >
+                <View style={[
+                  styles.stepNumber,
+                  voiceModeActive && index === currentStepIndex && styles.stepNumberActive,
+                ]}>
+                  <Text style={styles.stepNumberText}>{index + 1}</Text>
+                </View>
+                <Text style={[
+                  styles.stepText,
+                  voiceModeActive && index === currentStepIndex && styles.stepTextActive,
+                ]}>
+                  {step}
+                </Text>
               </View>
-              <Text style={[
-                styles.stepText,
-                voiceModeActive && index === currentStepIndex && styles.stepTextActive,
-              ]}>
-                {step}
-              </Text>
-            </View>
-          ))}
+            ))
+          )}
         </View>
 
         {/* Allergens */}
@@ -725,7 +731,7 @@ export default function RecipeDetailScreen({ route, navigation }) {
         <View style={{ height: voiceModeActive ? 110 : 40 }} />
       </ScrollView>
 
-      {/* ✅ NEW: Floating voice control bar */}
+      {/* Floating voice control bar */}
       {voiceModeActive && (
         <View style={styles.voiceBar}>
           <TouchableOpacity
@@ -1113,7 +1119,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  // ✅ NEW: Voice feature styles
+  // Voice feature styles
   listenButton: {
     flexDirection: "row",
     alignItems: "center",
